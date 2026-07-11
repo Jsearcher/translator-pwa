@@ -1,0 +1,763 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#4f8ef7" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="翻譯" />
+  <title>即時對話翻譯</title>
+  <link rel="manifest" href="manifest.json" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0f0f1a;
+      --surface: #1a1a2e;
+      --surface2: #22223a;
+      --border: #2e2e4a;
+      --accent: #4f8ef7;
+      --accent2: #a78bfa;
+      --text: #e8e8f8;
+      --text2: #9090b8;
+      --user-bg: linear-gradient(135deg, #4f8ef7, #6c6ef7);
+      --bot-bg: #22223a;
+      --red: #f43f5e;
+      --green: #34d399;
+      --radius: 18px;
+      --safe-bottom: env(safe-area-inset-bottom, 0px);
+    }
+
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Hiragino Kaku Gothic Pro', 'Noto Sans TC', 'PingFang TC', sans-serif;
+      overflow: hidden;
+    }
+
+    #app {
+      display: flex;
+      flex-direction: column;
+      height: 100dvh;
+      max-width: 640px;
+      margin: 0 auto;
+    }
+
+    /* ── Header ── */
+    #header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 14px 18px 10px;
+      flex-shrink: 0;
+      padding-top: max(14px, env(safe-area-inset-top));
+    }
+
+    #header h1 {
+      font-size: 17px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      color: var(--text);
+    }
+
+    #mode-label {
+      font-size: 11.5px;
+      font-weight: 600;
+      margin-top: 3px;
+      color: var(--text2);
+      transition: color 0.3s;
+    }
+
+    #mode-label.active { color: var(--accent); }
+    #mode-label.setup  { color: #f0a500; }
+
+    /* ── Lang Switcher ── */
+    #lang-bar {
+      display: none;
+      background: var(--surface2);
+      border-bottom: 1px solid var(--border);
+      padding: 8px 14px;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+
+    #lang-bar.visible { display: flex; }
+
+    #lang-bar span {
+      font-size: 11px;
+      color: var(--text2);
+      align-self: center;
+      white-space: nowrap;
+    }
+
+    .lang-btn {
+      padding: 5px 14px;
+      border-radius: 20px;
+      border: 1.5px solid var(--border);
+      background: transparent;
+      color: var(--text2);
+      font-size: 13px;
+      font-family: inherit;
+      cursor: pointer;
+      transition: all 0.2s;
+      white-space: nowrap;
+    }
+
+    .lang-btn.active {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+      font-weight: 600;
+    }
+
+    /* ── Messages ── */
+    #messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 14px 12px 8px;
+      scroll-behavior: smooth;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    .msg-row {
+      display: flex;
+      flex-direction: column;
+      margin-bottom: 12px;
+    }
+
+    .msg-row.user { align-items: flex-end; }
+    .msg-row.bot  { align-items: flex-start; }
+
+    .bubble-wrap {
+      display: flex;
+      align-items: flex-end;
+      gap: 8px;
+    }
+
+    .msg-row.user .bubble-wrap { flex-direction: row-reverse; }
+
+    .avatar {
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+      font-weight: 700;
+      color: #fff;
+      flex-shrink: 0;
+    }
+
+    .bubble {
+      max-width: 78%;
+      padding: 10px 14px;
+      border-radius: 16px;
+      font-size: 15px;
+      line-height: 1.65;
+      white-space: pre-wrap;
+      word-break: break-word;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    }
+
+    .msg-row.user .bubble {
+      background: var(--user-bg);
+      color: #fff;
+      border-radius: 16px 16px 4px 16px;
+    }
+
+    .msg-row.bot .bubble {
+      background: var(--bot-bg);
+      color: var(--text);
+      border-radius: 16px 16px 16px 4px;
+    }
+
+    .replay-wrap {
+      margin-left: 38px;
+      margin-top: 5px;
+    }
+
+    .replay-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 3px 11px 3px 8px;
+      border-radius: 20px;
+      border: none;
+      background: var(--surface2);
+      color: var(--accent);
+      font-size: 12px;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    .replay-btn:active { background: var(--border); }
+
+    /* ── Typing indicator ── */
+    #typing {
+      display: none;
+      align-items: center;
+      gap: 5px;
+      margin-left: 38px;
+      margin-bottom: 10px;
+    }
+
+    #typing.visible { display: flex; }
+
+    .dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: var(--text2);
+      animation: bounce 1s infinite;
+    }
+    .dot:nth-child(2) { animation-delay: 0.15s; }
+    .dot:nth-child(3) { animation-delay: 0.30s; }
+
+    @keyframes bounce {
+      0%,80%,100% { transform: translateY(0); }
+      40% { transform: translateY(-7px); }
+    }
+
+    /* ── Tip bar ── */
+    #tip-bar {
+      display: none;
+      background: #1a2540;
+      border-top: 1px solid #2a3a6a;
+      padding: 6px 14px;
+      font-size: 11.5px;
+      color: #7090d8;
+      text-align: center;
+      flex-shrink: 0;
+    }
+
+    #tip-bar.visible { display: block; }
+
+    /* ── Input Bar ── */
+    #input-bar {
+      background: var(--surface);
+      border-top: 1px solid var(--border);
+      padding: 10px 10px calc(10px + var(--safe-bottom));
+      display: flex;
+      gap: 8px;
+      align-items: flex-end;
+      flex-shrink: 0;
+    }
+
+    #input {
+      flex: 1;
+      resize: none;
+      border: 1.5px solid var(--border);
+      border-radius: 20px;
+      padding: 10px 14px;
+      font-size: 15px;
+      font-family: inherit;
+      line-height: 1.5;
+      background: var(--surface2);
+      color: var(--text);
+      outline: none;
+      max-height: 120px;
+      overflow-y: auto;
+      transition: border-color 0.15s;
+      -webkit-appearance: none;
+    }
+
+    #input:focus { border-color: var(--accent); }
+    #input::placeholder { color: var(--text2); }
+
+    /* ── Mic Button ── */
+    #mic-btn {
+      width: 46px; height: 46px;
+      border-radius: 50%;
+      border: none;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      color: #fff;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      box-shadow: 0 2px 10px rgba(79,142,247,0.35);
+      transition: all 0.2s;
+      position: relative;
+    }
+
+    #mic-btn.recording {
+      background: linear-gradient(135deg, var(--red), #fb7185);
+      box-shadow: 0 0 0 6px rgba(244,63,94,0.2);
+      animation: pulse 1s infinite;
+    }
+
+    @keyframes pulse {
+      0%,100% { box-shadow: 0 0 0 4px rgba(244,63,94,0.2); }
+      50%      { box-shadow: 0 0 0 8px rgba(244,63,94,0.1); }
+    }
+
+    /* ── Send Button ── */
+    #send-btn {
+      width: 46px; height: 46px;
+      border-radius: 50%;
+      border: none;
+      background: linear-gradient(135deg, var(--accent), #6c6ef7);
+      color: #fff;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      box-shadow: 0 2px 10px rgba(79,142,247,0.35);
+      transition: all 0.2s;
+    }
+
+    #send-btn:disabled {
+      background: var(--border);
+      box-shadow: none;
+      cursor: default;
+    }
+
+    /* ── Install banner ── */
+    #install-banner {
+      display: none;
+      position: fixed;
+      bottom: 0; left: 0; right: 0;
+      background: var(--surface);
+      border-top: 1px solid var(--border);
+      padding: 14px 18px calc(14px + var(--safe-bottom));
+      text-align: center;
+      z-index: 100;
+    }
+
+    #install-banner p {
+      font-size: 13px;
+      color: var(--text2);
+      margin-bottom: 10px;
+    }
+
+    #install-banner button {
+      padding: 9px 24px;
+      border-radius: 20px;
+      border: none;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      color: #fff;
+      font-size: 14px;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+    }
+
+    #install-close {
+      position: absolute;
+      top: 10px; right: 14px;
+      background: none;
+      border: none;
+      color: var(--text2);
+      font-size: 20px;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+<div id="app">
+  <!-- Header -->
+  <div id="header">
+    <h1>即時對話翻譯</h1>
+    <div id="mode-label">● 一般模式</div>
+  </div>
+
+  <!-- Lang switcher (翻譯模式才顯示) -->
+  <div id="lang-bar">
+    <span>辨識語言：</span>
+    <button class="lang-btn active" data-lang="zh-TW" onclick="setRecogLang('zh-TW', this)">中文</button>
+    <button class="lang-btn" data-lang="ja-JP" onclick="setRecogLang('ja-JP', this)">日文</button>
+    <button class="lang-btn" data-lang="en-US" onclick="setRecogLang('en-US', this)">英文</button>
+  </div>
+
+  <!-- Messages -->
+  <div id="messages"></div>
+
+  <!-- Typing -->
+  <div id="typing"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>
+
+  <!-- Tip bar -->
+  <div id="tip-bar" id="tip-bar">🎙 按住麥克風說話，放開後自動送出翻譯</div>
+
+  <!-- Input bar -->
+  <div id="input-bar">
+    <textarea id="input" rows="1" placeholder="輸入訊息，或說「開始翻譯」…"></textarea>
+    <button id="mic-btn" title="按住說話">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="9" y="2" width="6" height="12" rx="3" id="mic-rect"/>
+        <path d="M5 10a7 7 0 0 0 14 0"/>
+        <line x1="12" y1="17" x2="12" y2="22"/>
+        <line x1="8" y1="22" x2="16" y2="22"/>
+      </svg>
+    </button>
+    <button id="send-btn" disabled title="送出">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="22" y1="2" x2="11" y2="13"/>
+        <polygon points="22,2 15,22 11,13 2,9"/>
+      </svg>
+    </button>
+  </div>
+</div>
+
+<!-- Install banner -->
+<div id="install-banner">
+  <button id="install-close" onclick="document.getElementById('install-banner').style.display='none'">×</button>
+  <p>將此翻譯工具加入主畫面，像 APP 一樣使用</p>
+  <button id="install-btn">加入主畫面</button>
+</div>
+
+<script>
+// ── 設定區 ──────────────────────────────────────────
+const API_KEY = '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';
+const MODEL   = 'claude-sonnet-4-6';
+
+// ── 狀態 ────────────────────────────────────────────
+let mode       = 'chat';   // 'chat' | 'setup' | 'translate'
+let targetLang = '';
+let recogLang  = 'zh-TW';
+let recognition = null;
+let isRecording = false;
+let playingUtter = null;
+let deferredInstallPrompt = null;
+
+const INITIAL_MSG = '歡迎使用即時對話翻譯！\n\n輸入或說「開始翻譯」即可啟動翻譯模式。\n說「結束翻譯」可離開翻譯模式。';
+
+// ── DOM ─────────────────────────────────────────────
+const $msgs    = document.getElementById('messages');
+const $input   = document.getElementById('input');
+const $send    = document.getElementById('send-btn');
+const $mic     = document.getElementById('mic-btn');
+const $typing  = document.getElementById('typing');
+const $modeL   = document.getElementById('mode-label');
+const $langBar = document.getElementById('lang-bar');
+const $tipBar  = document.getElementById('tip-bar');
+const $micRect = document.getElementById('mic-rect');
+
+// ── 初始化 ──────────────────────────────────────────
+addBotMsg(INITIAL_MSG);
+updateUI();
+
+// ── 語言對應 ────────────────────────────────────────
+const LANG_MAP = {
+  '日文':'ja-JP','日語':'ja-JP',
+  '英文':'en-US','英語':'en-US',
+  '韓文':'ko-KR','韓語':'ko-KR',
+  '法文':'fr-FR','法語':'fr-FR',
+  '德文':'de-DE','德語':'de-DE',
+  '西班牙文':'es-ES','西語':'es-ES',
+  '泰文':'th-TH','泰語':'th-TH',
+  '越南文':'vi-VN','越南語':'vi-VN',
+  '中文':'zh-TW',
+};
+
+function ttsCode(lang) { return LANG_MAP[lang] || 'zh-TW'; }
+function isChinese(text) { return /[\u4e00-\u9fff]/.test(text); }
+
+// ── 辨識語言切換 ────────────────────────────────────
+function setRecogLang(lang, btn) {
+  recogLang = lang;
+  document.querySelectorAll('.lang-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+}
+
+// ── 關鍵字偵測 ──────────────────────────────────────
+function getKeyword(text) {
+  const t = text.trim();
+  if (['開始翻譯','开始翻译','start translation','Start Translation'].includes(t)) return 'start';
+  if (['結束翻譯','结束翻译','stop translation','Stop Translation'].includes(t)) return 'stop';
+  return null;
+}
+
+// ── 主送出流程 ──────────────────────────────────────
+async function handleSend(text) {
+  text = text.trim();
+  if (!text) return;
+  $input.value = '';
+  $send.disabled = true;
+  const kw = getKeyword(text);
+
+  // 開始翻譯
+  if (kw === 'start') {
+    addUserMsg(text);
+    mode = 'setup';
+    updateUI();
+    addBotMsg('請問需要翻譯哪種語言？\n（例如：日文、英文、韓文…）');
+    return;
+  }
+
+  // 結束翻譯
+  if (kw === 'stop' && mode === 'translate') {
+    stopTTS();
+    mode = 'chat';
+    targetLang = '';
+    updateUI();
+    clearMessages();
+    addBotMsg(INITIAL_MSG);
+    return;
+  }
+
+  // 設定語言
+  if (mode === 'setup') {
+    addUserMsg(text);
+    targetLang = text;
+    mode = 'translate';
+    updateUI();
+    // 自動設定辨識語言對應
+    const code = ttsCode(targetLang);
+    recogLang = 'zh-TW';
+    document.querySelectorAll('.lang-btn').forEach(b => {
+      b.classList.toggle('active', b.dataset.lang === 'zh-TW');
+      // 動態加入目標語言按鈕（如果不是日文/英文）
+    });
+    addBotMsg(`✅ 已設定「中文 ↔ ${targetLang}」翻譯模式\n\n• 按語言列切換辨識語言\n• 按住🎙說話，放開自動翻譯\n• 也可直接輸入文字\n• 說「結束翻譯」離開`);
+    return;
+  }
+
+  // 翻譯模式
+  if (mode === 'translate') {
+    addUserMsg(text);
+    showTyping(true);
+    try {
+      const result = await callClaude(text);
+      showTyping(false);
+      const speakLang = isChinese(text) ? targetLang : '中文';
+      const id = Date.now();
+      addBotMsg(result, id, speakLang, result);
+      setTimeout(() => playTTS(result, ttsCode(speakLang), id), 200);
+    } catch(e) {
+      showTyping(false);
+      addBotMsg('翻譯失敗，請確認網路連線後重試。');
+    }
+    return;
+  }
+
+  // 一般 Chat
+  addUserMsg(text);
+  showTyping(true);
+  try {
+    const result = await callClaude(text, '你是一個翻譯助手，使用繁體中文回覆，簡潔專業。');
+    showTyping(false);
+    addBotMsg(result);
+  } catch(e) {
+    showTyping(false);
+    addBotMsg('發生錯誤，請重試。');
+  }
+}
+
+// ── Claude API ──────────────────────────────────────
+async function callClaude(text, systemOverride) {
+  const system = systemOverride || `你是即時對話翻譯助手。
+規則：
+- 若輸入是中文，翻譯成${targetLang}，只輸出譯文，不加任何說明。
+- 若輸入是${targetLang}，翻譯成中文，只輸出譯文，不加任何說明。
+- 不要解釋，不要加標點以外的額外文字。`;
+
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': API_KEY,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true',
+    },
+    body: JSON.stringify({
+      model: MODEL,
+      max_tokens: 1000,
+      system,
+      messages: [{ role: 'user', content: text }],
+    }),
+  });
+  const data = await res.json();
+  if (data.error) throw new Error(data.error.message);
+  return data.content?.map(b => b.text || '').join('') || '';
+}
+
+// ── TTS ─────────────────────────────────────────────
+function playTTS(text, lang, id) {
+  stopTTS();
+  const utter = new SpeechSynthesisUtterance(text);
+  utter.lang = lang;
+  utter.rate = 0.95;
+  utter.onstart = () => {
+    const btn = document.querySelector(`.replay-btn[data-id="${id}"]`);
+    if (btn) btn.textContent = '⏹ 停止';
+  };
+  utter.onend = utter.onerror = () => {
+    const btn = document.querySelector(`.replay-btn[data-id="${id}"]`);
+    if (btn) btn.innerHTML = '▶ 重播';
+    playingUtter = null;
+  };
+  playingUtter = utter;
+  window.speechSynthesis.speak(utter);
+}
+
+function stopTTS() {
+  window.speechSynthesis.cancel();
+  playingUtter = null;
+  document.querySelectorAll('.replay-btn').forEach(b => b.innerHTML = '▶ 重播');
+}
+
+// ── 語音辨識 ────────────────────────────────────────
+function setupRecognition() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) return null;
+  const r = new SR();
+  r.interimResults = false;
+  r.maxAlternatives = 1;
+  r.onresult = e => {
+    const transcript = e.results[0][0].transcript;
+    $input.value = transcript;
+    updateSendBtn();
+    handleSend(transcript);
+  };
+  r.onerror = () => { isRecording = false; $mic.classList.remove('recording'); $micRect.setAttribute('fill','none'); };
+  r.onend   = () => { isRecording = false; $mic.classList.remove('recording'); $micRect.setAttribute('fill','none'); };
+  return r;
+}
+
+function startRecording() {
+  if (isRecording) return;
+  recognition = setupRecognition();
+  if (!recognition) { alert('此瀏覽器不支援語音辨識，請使用 Chrome'); return; }
+  recognition.lang = recogLang;
+  recognition.start();
+  isRecording = true;
+  $mic.classList.add('recording');
+  $micRect.setAttribute('fill', 'currentColor');
+}
+
+function stopRecording() {
+  if (!isRecording) return;
+  recognition?.stop();
+  isRecording = false;
+  $mic.classList.remove('recording');
+  $micRect.setAttribute('fill', 'none');
+}
+
+// ── 訊息 DOM ────────────────────────────────────────
+function addUserMsg(text) {
+  const row = document.createElement('div');
+  row.className = 'msg-row user';
+  row.innerHTML = `<div class="bubble-wrap"><div class="bubble">${esc(text)}</div></div>`;
+  $msgs.appendChild(row);
+  scrollBottom();
+}
+
+function addBotMsg(text, id, speakLang, speakText) {
+  const row = document.createElement('div');
+  row.className = 'msg-row bot';
+  let replayHTML = '';
+  if (id && speakText) {
+    replayHTML = `<div class="replay-wrap"><button class="replay-btn" data-id="${id}" onclick="handleReplay(this,'${esc(speakText)}','${ttsCode(speakLang)}',${id})">▶ 重播</button></div>`;
+  }
+  row.innerHTML = `
+    <div class="bubble-wrap">
+      <div class="avatar">譯</div>
+      <div class="bubble">${esc(text)}</div>
+    </div>
+    ${replayHTML}`;
+  $msgs.appendChild(row);
+  scrollBottom();
+}
+
+function handleReplay(btn, text, lang, id) {
+  if (btn.textContent.includes('停止')) { stopTTS(); return; }
+  playTTS(text, lang, id);
+}
+
+function clearMessages() {
+  $msgs.innerHTML = '';
+}
+
+function showTyping(show) {
+  $typing.classList.toggle('visible', show);
+  if (show) scrollBottom();
+}
+
+function scrollBottom() {
+  setTimeout(() => $msgs.scrollTop = $msgs.scrollHeight, 50);
+}
+
+function esc(text) {
+  return text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
+}
+
+// ── UI 狀態更新 ──────────────────────────────────────
+function updateUI() {
+  if (mode === 'translate') {
+    $modeL.textContent = `● 翻譯模式：中文 ↔ ${targetLang}`;
+    $modeL.className = 'active';
+    $langBar.classList.add('visible');
+    $tipBar.classList.add('visible');
+    $input.placeholder = `輸入中文或${targetLang}…`;
+  } else if (mode === 'setup') {
+    $modeL.textContent = '● 設定語言中…';
+    $modeL.className = 'setup';
+    $langBar.classList.remove('visible');
+    $tipBar.classList.remove('visible');
+    $input.placeholder = '輸入目標語言，例如：日文';
+  } else {
+    $modeL.textContent = '● 一般模式';
+    $modeL.className = '';
+    $langBar.classList.remove('visible');
+    $tipBar.classList.remove('visible');
+    $input.placeholder = '輸入訊息，或說「開始翻譯」…';
+  }
+}
+
+function updateSendBtn() {
+  $send.disabled = !$input.value.trim();
+}
+
+// ── 事件綁定 ────────────────────────────────────────
+$input.addEventListener('input', () => {
+  updateSendBtn();
+  $input.style.height = 'auto';
+  $input.style.height = Math.min($input.scrollHeight, 120) + 'px';
+});
+
+$input.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    if ($input.value.trim()) handleSend($input.value);
+  }
+});
+
+$send.addEventListener('click', () => {
+  if ($input.value.trim()) handleSend($input.value);
+});
+
+// 按住說話
+$mic.addEventListener('mousedown',  startRecording);
+$mic.addEventListener('mouseup',    stopRecording);
+$mic.addEventListener('mouseleave', stopRecording);
+$mic.addEventListener('touchstart', e => { e.preventDefault(); startRecording(); }, { passive: false });
+$mic.addEventListener('touchend',   e => { e.preventDefault(); stopRecording();  }, { passive: false });
+
+// ── PWA 安裝 ────────────────────────────────────────
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault();
+  deferredInstallPrompt = e;
+  document.getElementById('install-banner').style.display = 'block';
+});
+
+document.getElementById('install-btn').addEventListener('click', async () => {
+  if (!deferredInstallPrompt) return;
+  deferredInstallPrompt.prompt();
+  const { outcome } = await deferredInstallPrompt.userChoice;
+  deferredInstallPrompt = null;
+  document.getElementById('install-banner').style.display = 'none';
+});
+
+// ── Service Worker ───────────────────────────────────
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('./sw.js').catch(() => {});
+}
+</script>
+</body>
+</html>

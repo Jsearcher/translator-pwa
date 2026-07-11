@@ -174,29 +174,6 @@
       border-radius: 16px 16px 16px 4px;
     }
 
-    .replay-wrap {
-      margin-left: 38px;
-      margin-top: 5px;
-    }
-
-    .replay-btn {
-      display: inline-flex;
-      align-items: center;
-      gap: 5px;
-      padding: 3px 11px 3px 8px;
-      border-radius: 20px;
-      border: none;
-      background: var(--surface2);
-      color: var(--accent);
-      font-size: 12px;
-      font-weight: 600;
-      font-family: inherit;
-      cursor: pointer;
-      transition: background 0.2s;
-    }
-
-    .replay-btn:active { background: var(--border); }
-
     /* ── Typing indicator ── */
     #typing {
       display: none;
@@ -382,7 +359,7 @@
   <div id="typing"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>
 
   <!-- Tip bar -->
-  <div id="tip-bar" id="tip-bar">🎙 按住麥克風說話，放開後自動送出翻譯</div>
+  <div id="tip-bar" id="tip-bar">🎙 點麥克風開始說話，說完後再點一次停止送出</div>
 
   <!-- Input bar -->
   <div id="input-bar">
@@ -422,7 +399,6 @@ let targetLang = '';
 let recogLang  = 'zh-TW';
 let recognition = null;
 let isRecording = false;
-let playingUtter = null;
 let deferredInstallPrompt = null;
 
 const INITIAL_MSG = '歡迎使用即時對話翻譯！\n\n輸入或說「開始翻譯」即可啟動翻譯模式。\n說「結束翻譯」可離開翻譯模式。';
@@ -455,7 +431,6 @@ const LANG_MAP = {
   '中文':'zh-TW',
 };
 
-function ttsCode(lang) { return LANG_MAP[lang] || 'zh-TW'; }
 function isChinese(text) { return /[\u4e00-\u9fff]/.test(text); }
 
 // ── 辨識語言切換 ────────────────────────────────────
@@ -492,7 +467,6 @@ async function handleSend(text) {
 
   // 結束翻譯
   if (kw === 'stop' && mode === 'translate') {
-    stopTTS();
     mode = 'chat';
     targetLang = '';
     updateUI();
@@ -514,7 +488,7 @@ async function handleSend(text) {
       b.classList.toggle('active', b.dataset.lang === 'zh-TW');
       // 動態加入目標語言按鈕（如果不是日文/英文）
     });
-    addBotMsg(`✅ 已設定「中文 ↔ ${targetLang}」翻譯模式\n\n• 按語言列切換辨識語言\n• 按住🎙說話，放開自動翻譯\n• 也可直接輸入文字\n• 說「結束翻譯」離開`);
+    addBotMsg(`✅ 已設定「中文 ↔ ${targetLang}」翻譯模式\n\n• 按語言列切換辨識語言\n• 點🎙開始語音輸入，再點一次停止\n• 也可直接輸入文字\n• 說「結束翻譯」離開`);
     return;
   }
 
@@ -525,10 +499,7 @@ async function handleSend(text) {
     try {
       const result = await callClaude(text);
       showTyping(false);
-      const speakLang = isChinese(text) ? targetLang : '中文';
-      const id = Date.now();
-      addBotMsg(result, id, speakLang, result);
-      setTimeout(() => playTTS(result, ttsCode(speakLang), id), 200);
+      addBotMsg(result);
     } catch(e) {
       showTyping(false);
       addBotMsg('翻譯失敗，請確認網路連線後重試。');
@@ -577,31 +548,6 @@ async function callClaude(text, systemOverride) {
   return data.content?.map(b => b.text || '').join('') || '';
 }
 
-// ── TTS ─────────────────────────────────────────────
-function playTTS(text, lang, id) {
-  stopTTS();
-  const utter = new SpeechSynthesisUtterance(text);
-  utter.lang = lang;
-  utter.rate = 0.95;
-  utter.onstart = () => {
-    const btn = document.querySelector(`.replay-btn[data-id="${id}"]`);
-    if (btn) btn.textContent = '⏹ 停止';
-  };
-  utter.onend = utter.onerror = () => {
-    const btn = document.querySelector(`.replay-btn[data-id="${id}"]`);
-    if (btn) btn.innerHTML = '▶ 重播';
-    playingUtter = null;
-  };
-  playingUtter = utter;
-  window.speechSynthesis.speak(utter);
-}
-
-function stopTTS() {
-  window.speechSynthesis.cancel();
-  playingUtter = null;
-  document.querySelectorAll('.replay-btn').forEach(b => b.innerHTML = '▶ 重播');
-}
-
 // ── 語音辨識 ────────────────────────────────────────
 function setupRecognition() {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -609,34 +555,124 @@ function setupRecognition() {
   const r = new SR();
   r.interimResults = false;
   r.maxAlternatives = 1;
+  r.continuous = false;
   r.onresult = e => {
     const transcript = e.results[0][0].transcript;
     $input.value = transcript;
     updateSendBtn();
+    // 辨識完成後自動停止並送出
+    isRecording = false;
+    $mic.classList.remove('recording');
+    $micRect.setAttribute('fill', 'none');
+    $mic.title = '點擊開始語音輸入';
     handleSend(transcript);
   };
-  r.onerror = () => { isRecording = false; $mic.classList.remove('recording'); $micRect.setAttribute('fill','none'); };
-  r.onend   = () => { isRecording = false; $mic.classList.remove('recording'); $micRect.setAttribute('fill','none'); };
+  r.onerror = () => {
+    isRecording = false;
+    $mic.classList.remove('recording');
+    $micRect.setAttribute('fill', 'none');
+    $mic.title = '點擊開始語音輸入';
+  };
+  r.onend = () => {
+    if (isRecording) {
+      // 若還在錄音狀態（用戶主動停止）則送出
+      isRecording = false;
+      $mic.classList.remove('recording');
+      $micRect.setAttribute('fill', 'none');
+      $mic.title = '點擊開始語音輸入';
+    }
+  };
   return r;
 }
 
-function startRecording() {
-  if (isRecording) return;
-  recognition = setupRecognition();
-  if (!recognition) { alert('此瀏覽器不支援語音辨識，請使用 Chrome'); return; }
-  recognition.lang = recogLang;
-  recognition.start();
-  isRecording = true;
-  $mic.classList.add('recording');
-  $micRect.setAttribute('fill', 'currentColor');
-}
+function toggleRecording() {
+  if (isRecording) {
+    // 點第二次：停止錄音
+    recognition?.stop();
+    isRecording = false;
+    $mic.classList.remove('recording');
+    $micRect.setAttribute('fill', 'none');
+    $mic.title = '點擊開始語音輸入';
+  } else {
+    // 點第一次：開始錄音（使用 getUserMedia 優化收音）
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) { alert('此瀏覽器不支援語音辨識，請使用 Chrome'); return; }
 
-function stopRecording() {
-  if (!isRecording) return;
-  recognition?.stop();
-  isRecording = false;
-  $mic.classList.remove('recording');
-  $micRect.setAttribute('fill', 'none');
+    // 先用 getUserMedia 取得高品質收音流
+    navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+        sampleRate: 48000,
+      }
+    }).then(stream => {
+      // 取得權限後停止 stream（SpeechRecognition 會自己開麥克風）
+      stream.getTracks().forEach(t => t.stop());
+
+      recognition = new SR();
+      recognition.lang = recogLang;
+      recognition.interimResults = false;
+      recognition.maxAlternatives = 1;
+      recognition.continuous = false;
+
+      recognition.onresult = e => {
+        const transcript = e.results[0][0].transcript;
+        $input.value = transcript;
+        updateSendBtn();
+        isRecording = false;
+        $mic.classList.remove('recording');
+        $micRect.setAttribute('fill', 'none');
+        $mic.title = '點擊開始語音輸入';
+        handleSend(transcript);
+      };
+      recognition.onerror = () => {
+        isRecording = false;
+        $mic.classList.remove('recording');
+        $micRect.setAttribute('fill', 'none');
+        $mic.title = '點擊開始語音輸入';
+      };
+      recognition.onend = () => {
+        isRecording = false;
+        $mic.classList.remove('recording');
+        $micRect.setAttribute('fill', 'none');
+        $mic.title = '點擊開始語音輸入';
+      };
+
+      recognition.start();
+      isRecording = true;
+      $mic.classList.add('recording');
+      $micRect.setAttribute('fill', 'currentColor');
+      $mic.title = '點擊停止語音輸入';
+    }).catch(() => {
+      // 若 getUserMedia 不支援，直接啟動 SpeechRecognition
+      recognition = new SR();
+      recognition.lang = recogLang;
+      recognition.interimResults = false;
+      recognition.maxAlternatives = 1;
+      recognition.onresult = e => {
+        const transcript = e.results[0][0].transcript;
+        $input.value = transcript;
+        updateSendBtn();
+        isRecording = false;
+        $mic.classList.remove('recording');
+        $micRect.setAttribute('fill', 'none');
+        $mic.title = '點擊開始語音輸入';
+        handleSend(transcript);
+      };
+      recognition.onerror = recognition.onend = () => {
+        isRecording = false;
+        $mic.classList.remove('recording');
+        $micRect.setAttribute('fill', 'none');
+        $mic.title = '點擊開始語音輸入';
+      };
+      recognition.start();
+      isRecording = true;
+      $mic.classList.add('recording');
+      $micRect.setAttribute('fill', 'currentColor');
+      $mic.title = '點擊停止語音輸入';
+    });
+  }
 }
 
 // ── 訊息 DOM ────────────────────────────────────────
@@ -648,26 +684,16 @@ function addUserMsg(text) {
   scrollBottom();
 }
 
-function addBotMsg(text, id, speakLang, speakText) {
+function addBotMsg(text) {
   const row = document.createElement('div');
   row.className = 'msg-row bot';
-  let replayHTML = '';
-  if (id && speakText) {
-    replayHTML = `<div class="replay-wrap"><button class="replay-btn" data-id="${id}" onclick="handleReplay(this,'${esc(speakText)}','${ttsCode(speakLang)}',${id})">▶ 重播</button></div>`;
-  }
   row.innerHTML = `
     <div class="bubble-wrap">
       <div class="avatar">譯</div>
       <div class="bubble">${esc(text)}</div>
-    </div>
-    ${replayHTML}`;
+    </div>`;
   $msgs.appendChild(row);
   scrollBottom();
-}
-
-function handleReplay(btn, text, lang, id) {
-  if (btn.textContent.includes('停止')) { stopTTS(); return; }
-  playTTS(text, lang, id);
 }
 
 function clearMessages() {
@@ -732,12 +758,8 @@ $send.addEventListener('click', () => {
   if ($input.value.trim()) handleSend($input.value);
 });
 
-// 按住說話
-$mic.addEventListener('mousedown',  startRecording);
-$mic.addEventListener('mouseup',    stopRecording);
-$mic.addEventListener('mouseleave', stopRecording);
-$mic.addEventListener('touchstart', e => { e.preventDefault(); startRecording(); }, { passive: false });
-$mic.addEventListener('touchend',   e => { e.preventDefault(); stopRecording();  }, { passive: false });
+// 點按切換語音模式
+$mic.addEventListener('click', toggleRecording);
 
 // ── PWA 安裝 ────────────────────────────────────────
 window.addEventListener('beforeinstallprompt', e => {

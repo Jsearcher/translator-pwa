@@ -2,7 +2,7 @@
   "name": "即時對話翻譯",
   "short_name": "翻譯",
   "description": "中文與日文、英文即時對話翻譯工具",
-  "start_url": "https://jsearcher.github.io/translator-pwa/",
+  "start_url": "./?utm_source=pwa",
   "display": "standalone",
   "background_color": "#0f0f1a",
   "theme_color": "#4f8ef7",
